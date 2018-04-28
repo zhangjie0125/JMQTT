@@ -21,6 +21,9 @@ import io.netty.handler.codec.mqtt.MqttQoS;
 public class MqttVerticle extends AbstractVerticle {
 	@Override
 	public void start() {
+		//init Persistence module
+		Persistence.getInstance().start(vertx);
+		
 		MqttServerOptions options = new MqttServerOptions().setPort(50000);
 
 		MqttServer mqttServer = MqttServer.create(vertx, options);
@@ -85,12 +88,11 @@ public class MqttVerticle extends AbstractVerticle {
 	private void initClientConnection(MqttEndpoint endpoint) {
 		endpoint.disconnectHandler(v -> {
 			System.out.println("MQTT client [ " + endpoint.clientIdentifier() + "] send disconnect message");
-			//endpoint.close();
-			ClientManager.getInstance().removeClient(endpoint.clientIdentifier());
 		});
 
 		endpoint.closeHandler(v -> {
 			System.out.println("MQTT client [ " + endpoint.clientIdentifier() + "] closed connection");
+			ClientManager.getInstance().removeClient(endpoint.clientIdentifier());
 		});
 	}
 
@@ -156,10 +158,81 @@ public class MqttVerticle extends AbstractVerticle {
 			String topic = publish.topicName();
 			int publishQos = publish.qosLevel().value();
 			
-			boolean savedMessage = false;
+			System.out.println("Receive Publish msg from client:" + endpoint.clientIdentifier()
+					+ ", topic:" + topic + ", message:" + new String(publish.payload().getBytes()));
 			
 			List<ClientIdQos> subscribedClients = SubscribeInfo.getInstance().getSubscribedClients(topic);
-			if (subscribedClients != null) {
+			
+			if (subscribedClients == null) {
+				if (publishQos > 0) {
+					endpoint.publishAcknowledge(publish.messageId());
+				}
+				return;
+			}
+			
+			//check if need to save message into db.
+			boolean needSaveMessage = false;
+			if (publishQos > 0) {
+				for (ClientIdQos ciq : subscribedClients) {
+					if (ciq.getQos() > 0) {//TODO: still need to check 'clean session' flag
+						needSaveMessage = true;
+						break;
+					}
+				}
+			}
+			
+			if (needSaveMessage) {
+				Persistence.getInstance().saveMessage(endpoint.clientIdentifier(), topic,
+						publish.messageId(), publish.payload().getBytes(), new SaveInfoCallback() {
+					@Override
+					public void onSucceed(Integer insertId) {
+						for (ClientIdQos ciq : subscribedClients) {
+							int subscribedQos = ciq.getQos();
+							if (publishQos < subscribedQos) {
+								subscribedQos = publishQos;
+							}
+							final int qos = subscribedQos;
+							
+							Client client = ClientManager.getInstance().getClient(ciq.getClientId());
+							if (client == null) {
+								continue;
+							}
+							
+							if (qos > 0) {//TODO: need to check 'clean session' flag
+								//save client output message list
+								Persistence.getInstance().saveClientMessage(client.endpoint().clientIdentifier(),
+										insertId.intValue(), qos, new SaveInfoCallback() {
+									@Override
+									public void onSucceed(Integer id) {
+										System.out.println("Send Publish msg to client:" + client.endpoint().clientIdentifier()
+												+ ", topic:" + topic + ", message:" + new String(publish.payload().getBytes()));
+										client.endpoint().publish(topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
+										int msgId = client.endpoint().lastMessageId();
+										client.savePublishMessage(msgId, insertId.intValue(), topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
+										System.out.println("Save publish message, msgId:" + msgId + ", insertId:" + insertId);
+									}
+									
+									@Override
+									public void onFail() {
+										System.out.println("Failed to save client message");
+									}
+								});
+							} else {
+								//send message to client
+								System.out.println("Send Publish msg to client:" + client.endpoint().clientIdentifier()
+										+ ", topic:" + topic + ", message:" + new String(publish.payload().getBytes()));
+								client.endpoint().publish(topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
+							}
+						}
+					}
+
+					@Override
+					public void onFail() {
+						System.out.println("Failed to save message");
+					}
+				});
+			} else {
+				//No need to save message
 				for (ClientIdQos ciq : subscribedClients) {
 					int subscribedQos = ciq.getQos();
 					if (publishQos < subscribedQos) {
@@ -169,38 +242,9 @@ public class MqttVerticle extends AbstractVerticle {
 					
 					Client client = ClientManager.getInstance().getClient(ciq.getClientId());
 					if (client != null) {
-						if (!savedMessage) {
-							savedMessage = true;
-							Persistence.getInstance().saveMessage(endpoint.clientIdentifier(), topic,
-								publish.messageId(), publish.payload().getBytes(),
-								new SaveInfoCallback() {
-									@Override
-									public void onSucceed(Integer insertId) {
-										Persistence.getInstance().saveClientMessage(client.endpoint().clientIdentifier(), insertId.intValue(), qos,
-												new SaveInfoCallback() {
-											@Override
-											public void onSucceed(Integer id) {
-												client.endpoint().publish(topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
-												int msgId = client.endpoint().lastMessageId();
-												client.savePublishMessage(msgId, insertId.intValue(), topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
-												System.out.println("Save publish message, msgId:" + msgId + ", insertId:" + insertId);
-											}
-											
-											@Override
-											public void onFail() {
-												System.out.println("Failed to save client message");
-											}
-										});
-									}
-
-									@Override
-									public void onFail() {
-										System.out.println("Failed to save message");
-									}
-								});
-						}
-						
-						
+						System.out.println("Send Publish msg to client:" + client.endpoint().clientIdentifier()
+								+ ", topic:" + topic + ", message:" + new String(publish.payload().getBytes()));
+						client.endpoint().publish(topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
 					}
 				}
 			}

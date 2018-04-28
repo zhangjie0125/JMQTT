@@ -28,27 +28,32 @@ public class ClientManager {
     }
     
     public void addNewClient(String clientId, MqttEndpoint endpoint) {
+    	Client oldClient = null;
+    	
     	lock.lock();
     	
     	if (map.containsKey(clientId)) {
-    		Client oldClient = map.get(clientId);
-    		System.out.println("Close old client connection");
-    		oldClient.endpoint().close();
+    		oldClient = map.get(clientId);
+    		System.out.println("Close old client connection:" + oldClient.endpoint().clientIdentifier()
+    				+ ", old endpoint:" + oldClient.endpoint().toString() + ", new endpoint:" + endpoint.toString());
     		map.replace(clientId, new Client(endpoint));
     	} else {
     		map.put(clientId, new Client(endpoint));
     		System.out.println("Add new client connection for clientId[" + clientId + "]");
     	}
     	lock.unlock();
+    	
+    	if (oldClient != null) {
+    		oldClient.close();
+    	}
     }
     
     public void removeClient(String clientId) {
     	lock.lock();
     	
     	if (map.containsKey(clientId)) {
-    		//MqttEndpoint endpoint = map.get(clientId);
-    		//endpoint.close();
-    		map.remove(clientId);
+    		Client oldClient = map.remove(clientId);
+    		oldClient.close();
     	}
     	lock.unlock();
     }

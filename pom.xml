@@ -18,12 +18,12 @@
     <dependency>
       <groupId>io.vertx</groupId>
       <artifactId>vertx-mqtt</artifactId>
-      <version>3.5.0</version>
+      <version>3.5.1</version>
 	</dependency>
 	<dependency>
   	  <groupId>io.vertx</groupId>
       <artifactId>vertx-mysql-postgresql-client</artifactId>
-      <version>3.5.0</version>
+      <version>3.5.1</version>
     </dependency>
     <dependency>
       <groupId>org.slf4j</groupId>
@@ -59,6 +59,22 @@
           <target>1.8</target>
         </configuration>
       </plugin>
+      <plugin>
+             <groupId>org.apache.maven.plugins</groupId>
+             <artifactId>maven-shade-plugin</artifactId>
+             <version>2.4.3</version>
+             <configuration>
+                <!-- put your configurations here -->
+             </configuration>
+             <executions>
+                 <execution>
+                     <phase>package</phase>
+                     <goals>
+                        <goal>shade</goal>
+                     </goals>
+                 </execution>
+             </executions>
+         </plugin>
     </plugins>
   </build>
 </project>

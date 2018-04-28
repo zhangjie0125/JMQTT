@@ -8,7 +8,6 @@ public class Persistence {
             synchronized (MqttPersistence.class){
                 if(instance == null){
                     instance = new MysqlPersistence();
-                    instance.start();
                 }
             }
         }

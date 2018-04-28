@@ -3,8 +3,10 @@ package com.zhangjie.mqtt.persist;
 import java.util.ArrayList;
 import java.util.List;
 
+import io.vertx.core.Vertx;
+
 public interface MqttPersistence {
-	void start();
+	void start(Vertx vertx);
 	void stop();
 	
 	void saveClientConnection(String clientId, String nodeId, SaveInfoCallback cb);

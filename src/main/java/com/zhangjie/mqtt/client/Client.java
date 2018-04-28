@@ -1,6 +1,8 @@
 package com.zhangjie.mqtt.client;
 
 import java.util.ArrayList;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import io.netty.handler.codec.mqtt.MqttQoS;
 import io.vertx.core.buffer.Buffer;
@@ -72,27 +74,42 @@ class PublishMessage {
 public class Client {
 	private MqttEndpoint endpoint;
 	private ArrayList<PublishMessage> sentPublishMsgs;
+	private Lock lock;
 	
 	public Client(MqttEndpoint endpoint) {
 		this.endpoint = endpoint;
 		sentPublishMsgs = new ArrayList<>();
+		lock = new ReentrantLock();
 	}
 	
 	public void savePublishMessage(int msgId, int insertId, String topic, Buffer payload, MqttQoS qosLevel, boolean isDup, boolean isRetain) {
+		lock.lock();
 		sentPublishMsgs.add(new PublishMessage(msgId, insertId, topic, payload, qosLevel, isDup, isRetain));
+		lock.unlock();
 	}
 	
 	public int removePublishMessage(int msgId) {
+		lock.lock();
 		for (PublishMessage msg : sentPublishMsgs) {
 			if (msg.getMsgId() == msgId) {
 				sentPublishMsgs.remove(msg);
+				lock.unlock();
 				return msg.getInsertId();
 			}
 		}
+		lock.unlock();
 		return 0;
 	}
 	
 	public MqttEndpoint endpoint() {
 		return endpoint;
+	}
+	
+	public void close() {
+		try {
+			endpoint.close();
+		} catch (IllegalStateException e) {
+			// client is closed, no need to deal with this exception
+		}
 	}
 }
