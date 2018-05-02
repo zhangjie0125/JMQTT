@@ -6,12 +6,18 @@ import java.util.List;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.zhangjie.mqtt.MqttVerticle;
 import com.zhangjie.mqtt.persist.MqttTopicQos;
 
 public class SubscribeInfo {
     private volatile static SubscribeInfo instance;
     private Lock lock;
     private HashMap<String/*topic*/, List<ClientIdQos>> map;
+    
+    private static final Logger logger = LoggerFactory.getLogger(SubscribeInfo.class);
 
     public static SubscribeInfo getInstance(){
         if(instance == null){
@@ -30,6 +36,8 @@ public class SubscribeInfo {
     }
     
     public void addNewSubscribeInfo(String clientId, String topic, int qos) {
+    	logger.info("Add subscribe info, client[{}], topic[{}], qos[{}]", clientId, topic, qos);
+    	
     	ClientIdQos c = new ClientIdQos(clientId, qos);
     	
     	lock.lock();
@@ -45,9 +53,12 @@ public class SubscribeInfo {
     }
     
     public void addNewSubscribeInfos(String clientId, List<MqttTopicQos> info) {
+    	StringBuilder sb = new StringBuilder();
     	lock.lock();
     	
     	for (MqttTopicQos tq : info) {
+    		sb.append(tq.getTopic()).append(":").append(tq.getQos()).append(",");
+    		
     		ClientIdQos ciq = new ClientIdQos(clientId, tq.getQos());
         	List<ClientIdQos> subscribedClients = map.get(tq.getTopic());
         	if (subscribedClients == null) {
@@ -60,6 +71,8 @@ public class SubscribeInfo {
     	}
     	
     	lock.unlock();
+    	
+    	logger.info("Add subscribe info, client[{}], topic-qos[{}]", clientId, sb.toString());
     }
     
     public List<ClientIdQos> getSubscribedClients(String topic) {

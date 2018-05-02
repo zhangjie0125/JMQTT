@@ -4,6 +4,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.zhangjie.mqtt.client.ClientManager;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -13,6 +18,8 @@ import io.vertx.ext.sql.SQLConnection;
 
 public class MysqlPersistence implements MqttPersistence {
 	private SQLClient client;
+	
+	private static final Logger logger = LoggerFactory.getLogger(MysqlPersistence.class);
 	
 	@Override
 	public void start(Vertx vertx) {
@@ -33,7 +40,7 @@ public class MysqlPersistence implements MqttPersistence {
 	}
 	
 	@Override
-	public void saveClientConnection(String clientId, String nodeId, SaveInfoCallback cb) {
+	public void saveClientConnection(String clientId, String nodeId, PersistenceCallback cb) {
 		client.getConnection(res -> {
 			if (res.succeeded()) {
 				SQLConnection conn = res.result();
@@ -44,23 +51,20 @@ public class MysqlPersistence implements MqttPersistence {
 							//this function would be called again with 'r.succeeded() = false' 
 							conn.close();
 							if (r.succeeded()) {
-								System.out.println("saveClientConnection OK:" + ", client:" + clientId);
 								cb.onSucceed(0);
 							} else {
-								System.out.println("saveClientConnection error:" + r.cause().getMessage() + ", " + r.cause().toString() + ", client:" + clientId);
-								cb.onFail();
+								cb.onFail(r.cause());
 							}
 				});
-				System.out.println("saveClientConnection client:" + clientId);
 			} else {
-				System.out.println("saveClientConnection getConnection failed:" + res.cause().getMessage());
+				logger.error("saveClientConnection getConnection failed[{}]", res.cause().getMessage());
 			}
 		});
 		
 	}
 
 	@Override
-	public void saveClientSubscribe(String clientId, ArrayList<MqttTopicQos> subscribeInfo, SaveInfoCallback cb) {
+	public void saveClientSubscribe(String clientId, ArrayList<MqttTopicQos> subscribeInfo, PersistenceCallback cb) {
 		client.getConnection(res -> {
 			if (res.succeeded()) {
 				StringBuilder sb = new StringBuilder("INSERT INTO subscribe (client_id, topic, qos, time) VALUES");
@@ -81,7 +85,6 @@ public class MysqlPersistence implements MqttPersistence {
 					sb.append(",NOW(6))");
 				}
 				sb.append(" ON DUPLICATE KEY UPDATE qos=VALUES(qos), time=NOW(6)");
-				System.out.println("SaveClientSubscribe sql:" + sb.toString());
 				
 				SQLConnection conn = res.result();
 				conn.update(sb.toString(),
@@ -90,20 +93,20 @@ public class MysqlPersistence implements MqttPersistence {
 							if (r.succeeded()) {
 								cb.onSucceed(0);
 							} else {
-								System.out.println(r.cause().getMessage());
-								cb.onFail();
+								cb.onFail(r.cause());
 							}
 				});
+			} else {
+				logger.error("saveClientSubscribe getConnection failed[{}]", res.cause().getMessage());
 			}
 		});
 	}
 
 	@Override
-	public void removeClientSubscribe(String clientId, List<String> topics, SaveInfoCallback cb) {
+	public void removeClientSubscribe(String clientId, List<String> topics, PersistenceCallback cb) {
 		OperationCounterCallback occb = new OperationCounterCallback(topics.size());
 		
 		for (String topic : topics) {
-			System.out.println("remove client[" + clientId + "] topic[" + topic + "]");
 			client.getConnection(res -> {
 				if (res.succeeded()) {
 					SQLConnection conn = res.result();
@@ -112,25 +115,25 @@ public class MysqlPersistence implements MqttPersistence {
 							params, r -> {
 								conn.close();
 								if (!r.succeeded()) {
-									System.out.println(r.cause().getMessage());
-									//cb.onFail();
 									occb.setFailure();
 								}
 								if (occb.tick()) {
 									if (occb.getFailureCount() == 0) {
 										cb.onSucceed(0);
 									} else {
-										cb.onFail();
+										cb.onFail(r.cause());
 									}
 								}
 					});
+				} else {
+					logger.error("removeClientSubscribe getConnection failed[{}]", res.cause().getMessage());
 				}
 			});
 		}
 	}
 	
 	@Override
-	public void saveMessage(String clientId, String topic, int packetId, byte[] msg, SaveInfoCallback cb) {
+	public void saveMessage(String clientId, String topic, int packetId, byte[] msg, PersistenceCallback cb) {
 		client.getConnection(res -> {
 			if (res.succeeded()) {
 				SQLConnection conn = res.result();
@@ -139,19 +142,19 @@ public class MysqlPersistence implements MqttPersistence {
 						params, r -> {
 							conn.close();
 							if (r.succeeded()) {
-								System.out.println("Update result:" + r.result().getKeys().getInteger(0));
 								cb.onSucceed(r.result().getKeys().getInteger(0));
 							} else {
-								System.out.println(r.cause().getMessage());
-								cb.onFail();
+								cb.onFail(r.cause());
 							}
 				});
+			} else {
+				logger.error("saveMessage getConnection failed[{}]", res.cause().getMessage());
 			}
 		});
 	}
 	
 	@Override
-	public void saveClientMessage(String clientId, int msgId, int qos, SaveInfoCallback cb) {
+	public void saveClientMessage(String clientId, int msgId, int qos, PersistenceCallback cb) {
 		client.getConnection(res -> {
 			if (res.succeeded()) {
 				SQLConnection conn = res.result();
@@ -160,19 +163,19 @@ public class MysqlPersistence implements MqttPersistence {
 						params, r -> {
 							conn.close();
 							if (r.succeeded()) {
-								System.out.println("Insert msg list result:" + r.result().getKeys().getInteger(0));
 								cb.onSucceed(0);
 							} else {
-								System.out.println(r.cause().getMessage());
-								cb.onFail();
+								cb.onFail(r.cause());
 							}
 				});
+			} else {
+				logger.error("saveClientMessage getConnection failed[{}]", res.cause().getMessage());
 			}
 		});
 	}
 	
 	@Override
-	public void removeClientMessage(String clientId, int msgId, SaveInfoCallback cb) {
+	public void removeClientMessage(String clientId, int msgId, PersistenceCallback cb) {
 		client.getConnection(res -> {
 			if (res.succeeded()) {
 				SQLConnection conn = res.result();
@@ -181,13 +184,13 @@ public class MysqlPersistence implements MqttPersistence {
 						params, r -> {
 							conn.close();
 							if (r.succeeded()) {
-								System.out.println("Remove msg list ok");
 								cb.onSucceed(0);
 							} else {
-								System.out.println(r.cause().getMessage());
-								cb.onFail();
+								cb.onFail(r.cause());
 							}
 				});
+			} else {
+				logger.error("removeClientMessage getConnection failed[{}]", res.cause().getMessage());
 			}
 		});
 	}

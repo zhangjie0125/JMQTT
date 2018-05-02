@@ -1,6 +1,6 @@
 package com.zhangjie.mqtt.persist;
 
-public interface SaveInfoCallback {
+public interface PersistenceCallback {
 	void onSucceed(Integer insertId);
-	void onFail();
+	void onFail(Throwable t);
 }

@@ -3,8 +3,11 @@ package com.zhangjie.mqtt;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.zhangjie.mqtt.persist.Persistence;
-import com.zhangjie.mqtt.persist.SaveInfoCallback;
+import com.zhangjie.mqtt.persist.PersistenceCallback;
 import com.zhangjie.mqtt.subscribe.ClientIdQos;
 import com.zhangjie.mqtt.subscribe.SubscribeInfo;
 import com.zhangjie.mqtt.client.Client;
@@ -19,8 +22,12 @@ import io.vertx.mqtt.MqttServer;
 import io.netty.handler.codec.mqtt.MqttQoS;
 
 public class MqttVerticle extends AbstractVerticle {
+	private static final Logger logger = LoggerFactory.getLogger(MqttVerticle.class);
+	
 	@Override
 	public void start() {
+		logger.info("System start...");
+		
 		//init Persistence module
 		Persistence.getInstance().start(vertx);
 		
@@ -37,13 +44,14 @@ public class MqttVerticle extends AbstractVerticle {
 
 			if (ar.succeeded()) {
 
-				System.out.println("MQTT server is listening on port " + ar.result().actualPort());
+				logger.info("MQTT server is listening on port[{}]", ar.result().actualPort());
 			} else {
 
-				System.out.println("Error on starting the server");
-				ar.cause().printStackTrace();
+				logger.error("Error on starting the server, reason[{}]", ar.cause().getMessage());
+				//ar.cause().printStackTrace();
 			}
 		});
+		logger.info("System started");
 	}
 	
 	@Override
@@ -53,23 +61,23 @@ public class MqttVerticle extends AbstractVerticle {
 
 	private void initClient(MqttEndpoint endpoint) {
 		// shows main connect info
-		System.out.println("MQTT client [" + endpoint.clientIdentifier() + "] request to connect, clean session = "
-				+ endpoint.isCleanSession());
-
-		if (endpoint.auth() != null) {
-			System.out.println(
-					"[username = " + endpoint.auth().userName() + ", password = " + endpoint.auth().password() + "]");
+		
+		if (endpoint.auth() == null) {
+			logger.info("MQTT client [{}] request to connect, clean session[{}], keepAliveTime[{}]",
+					endpoint.clientIdentifier(), endpoint.isCleanSession(), endpoint.keepAliveTimeSeconds());
+		} else {
+			logger.info("MQTT client [{}] request to connect, clean session[{}], username[{}], password[{}], keepAliveTime[{}]",
+					endpoint.clientIdentifier(), endpoint.isCleanSession(),
+					endpoint.auth().userName(), endpoint.auth().password(), endpoint.keepAliveTimeSeconds());
 		}
-		if (endpoint.will() != null) {
+		/*if (endpoint.will() != null) {
 			System.out.println("[will topic = " + endpoint.will().willTopic() + " msg = "
 					+ endpoint.will().willMessage() + " QoS = " + endpoint.will().willQos() + " isRetain = "
 					+ endpoint.will().isWillRetain() + "]");
-		}
-
-		System.out.println("[keep alive timeout = " + endpoint.keepAliveTimeSeconds() + "]");
+		}*/
 
 		Persistence.getInstance().saveClientConnection(endpoint.clientIdentifier(), "nodeId1",
-				new SaveInfoCallback() {
+				new PersistenceCallback() {
 					@Override
 					public void onSucceed(Integer insertId) {
 						// accept connection from the remote client
@@ -78,8 +86,9 @@ public class MqttVerticle extends AbstractVerticle {
 					}
 
 					@Override
-					public void onFail() {
-						System.out.println("Failed to save connection info, close client connection");
+					public void onFail(Throwable t) {
+						logger.error("Failed to save client[{}] connection info, close client connection. reason[{}]",
+								endpoint.clientIdentifier(), t.getMessage());
 						endpoint.close();
 					}
 				});
@@ -87,11 +96,11 @@ public class MqttVerticle extends AbstractVerticle {
 
 	private void initClientConnection(MqttEndpoint endpoint) {
 		endpoint.disconnectHandler(v -> {
-			System.out.println("MQTT client [ " + endpoint.clientIdentifier() + "] send disconnect message");
+			logger.info("client [{}] send disconnect message", endpoint.clientIdentifier());
 		});
 
 		endpoint.closeHandler(v -> {
-			System.out.println("MQTT client [ " + endpoint.clientIdentifier() + "] closed connection");
+			logger.info("client [{}] closed connection", endpoint.clientIdentifier());
 			ClientManager.getInstance().removeClient(endpoint.clientIdentifier());
 		});
 	}
@@ -101,15 +110,18 @@ public class MqttVerticle extends AbstractVerticle {
 
 			ArrayList<MqttTopicQos> subscribeInfo = new ArrayList<>();
 			List<MqttQoS> grantedQosLevels = new ArrayList<>();
+			StringBuilder sb = new StringBuilder();
 			for (MqttTopicSubscription s : subscribe.topicSubscriptions()) {
-				System.out.println("Subscription for " + s.topicName() + " with QoS " + s.qualityOfService());
+				sb.append(s.topicName()).append(":").append(s.qualityOfService().value()).append(",");
+
 				grantedQosLevels.add(s.qualityOfService());
 				
 				subscribeInfo.add(new MqttTopicQos(s.topicName(), s.qualityOfService().value()));
 			}
+			logger.info("Client[{}] subscribe info[{}]", endpoint.clientIdentifier(), sb.toString());
 			
 			Persistence.getInstance().saveClientSubscribe(endpoint.clientIdentifier(), subscribeInfo,
-					new SaveInfoCallback() {
+					new PersistenceCallback() {
 						@Override
 						public void onSucceed(Integer insertId) {
 							// ack the subscriptions request
@@ -119,34 +131,33 @@ public class MqttVerticle extends AbstractVerticle {
 						}
 
 						@Override
-						public void onFail() {
-							System.out.println("Failed to save subscribe info, close client connection");
+						public void onFail(Throwable t) {
+							logger.error("Failed to save client[{}] subscribe info, close client connection. reason[{}]",
+									endpoint.clientIdentifier(), t.getMessage());
 							endpoint.close();
 						}
 					});
-			
-
-
 		});
 
 		endpoint.unsubscribeHandler(unsubscribe -> {
-
+			StringBuilder sb = new StringBuilder();
 			for (String t : unsubscribe.topics()) {
-				System.out.println("Unsubscription for " + t);
+				sb.append(t).append(",");
 			}
+			logger.info("client[{}] unsubscribe info[{}]", endpoint.clientIdentifier(), sb.toString());
 			
 			Persistence.getInstance().removeClientSubscribe(endpoint.clientIdentifier(), unsubscribe.topics(),
-					new SaveInfoCallback() {
+					new PersistenceCallback() {
 						@Override
 						public void onSucceed(Integer insertId) {
-							System.out.println("remove subscribe ok");
 							// ack the subscriptions request
 							endpoint.unsubscribeAcknowledge(unsubscribe.messageId());
 						}
 
 						@Override
-						public void onFail() {
-							System.out.println("Failed to remove subscribe info, close client connection");
+						public void onFail(Throwable t) {
+							logger.error("Failed to remove client[{}] subscribe info, close client connection. reason[{}]",
+									endpoint.clientIdentifier(), t.getMessage());
 							endpoint.close();
 						}
 					});
@@ -158,8 +169,8 @@ public class MqttVerticle extends AbstractVerticle {
 			String topic = publish.topicName();
 			int publishQos = publish.qosLevel().value();
 			
-			System.out.println("Receive Publish msg from client:" + endpoint.clientIdentifier()
-					+ ", topic:" + topic + ", message:" + new String(publish.payload().getBytes()));
+			logger.info("Receive Publish msg from client[{}], topic[{}], qos[{}], message[{}]",
+					endpoint.clientIdentifier(), topic, publishQos, new String(publish.payload().getBytes()));
 			
 			List<ClientIdQos> subscribedClients = SubscribeInfo.getInstance().getSubscribedClients(topic);
 			
@@ -167,6 +178,7 @@ public class MqttVerticle extends AbstractVerticle {
 				if (publishQos > 0) {
 					endpoint.publishAcknowledge(publish.messageId());
 				}
+				logger.info("There is no subscribed client");
 				return;
 			}
 			
@@ -183,7 +195,7 @@ public class MqttVerticle extends AbstractVerticle {
 			
 			if (needSaveMessage) {
 				Persistence.getInstance().saveMessage(endpoint.clientIdentifier(), topic,
-						publish.messageId(), publish.payload().getBytes(), new SaveInfoCallback() {
+						publish.messageId(), publish.payload().getBytes(), new PersistenceCallback() {
 					@Override
 					public void onSucceed(Integer insertId) {
 						for (ClientIdQos ciq : subscribedClients) {
@@ -201,34 +213,36 @@ public class MqttVerticle extends AbstractVerticle {
 							if (qos > 0) {//TODO: need to check 'clean session' flag
 								//save client output message list
 								Persistence.getInstance().saveClientMessage(client.endpoint().clientIdentifier(),
-										insertId.intValue(), qos, new SaveInfoCallback() {
+										insertId.intValue(), qos, new PersistenceCallback() {
 									@Override
 									public void onSucceed(Integer id) {
-										System.out.println("Send Publish msg to client:" + client.endpoint().clientIdentifier()
-												+ ", topic:" + topic + ", message:" + new String(publish.payload().getBytes()));
+										logger.info("Save and send Publish msg to client[{}], topic[{}], qos[{}], message[{}]",
+												client.endpoint().clientIdentifier(), topic, qos, new String(publish.payload().getBytes()));
 										client.endpoint().publish(topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
-										int msgId = client.endpoint().lastMessageId();
-										client.savePublishMessage(msgId, insertId.intValue(), topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
-										System.out.println("Save publish message, msgId:" + msgId + ", insertId:" + insertId);
+										int packetId = client.endpoint().lastMessageId();
+										client.savePublishMessage(packetId, insertId.intValue(), topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
+										logger.info("Save publish message, packetId[{}], insertId[{}]", packetId, insertId);
 									}
 									
 									@Override
-									public void onFail() {
-										System.out.println("Failed to save client message");
+									public void onFail(Throwable t) {
+										logger.error("Failed to save client[{}] message, reason[{}]",
+												client.endpoint().clientIdentifier(), t.getMessage());
 									}
 								});
 							} else {
 								//send message to client
-								System.out.println("Send Publish msg to client:" + client.endpoint().clientIdentifier()
-										+ ", topic:" + topic + ", message:" + new String(publish.payload().getBytes()));
+								logger.info("Send Publish msg to client[{}], topic[{}], qos[{}], message[{}]",
+										client.endpoint().clientIdentifier(), topic, qos, new String(publish.payload().getBytes()));
 								client.endpoint().publish(topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
 							}
 						}
 					}
 
 					@Override
-					public void onFail() {
-						System.out.println("Failed to save message");
+					public void onFail(Throwable t) {
+						logger.error("Failed to save client[{}] message, reason[{}]",
+								endpoint.clientIdentifier(), t.getMessage());
 					}
 				});
 			} else {
@@ -242,8 +256,8 @@ public class MqttVerticle extends AbstractVerticle {
 					
 					Client client = ClientManager.getInstance().getClient(ciq.getClientId());
 					if (client != null) {
-						System.out.println("Send Publish msg to client:" + client.endpoint().clientIdentifier()
-								+ ", topic:" + topic + ", message:" + new String(publish.payload().getBytes()));
+						logger.info("Send without save Publish msg to client[{}], topic[{}], qos[{}], message[{}]",
+								client.endpoint().clientIdentifier(), topic, qos, new String(publish.payload().getBytes()));
 						client.endpoint().publish(topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
 					}
 				}
@@ -258,18 +272,19 @@ public class MqttVerticle extends AbstractVerticle {
 			Client client = ClientManager.getInstance().getClient(endpoint.clientIdentifier());
 			if (client != null) {
 				int insertId = client.removePublishMessage(id);
-				System.out.println("PubAck client:" + endpoint.clientIdentifier() + ", msgId:" + id + ", insertId:" + insertId);
+				logger.info("PubAck client[{}], packetId[{}], insertId[{}]",
+						endpoint.clientIdentifier(), id, insertId);
 				Persistence.getInstance().removeClientMessage(endpoint.clientIdentifier(), insertId,
-						new SaveInfoCallback() {
+						new PersistenceCallback() {
 
 							@Override
 							public void onSucceed(Integer insertId) {
-								System.out.println("Remove client msg ok");
 							}
 
 							@Override
-							public void onFail() {
-								System.out.println("Remove client msg failed");
+							public void onFail(Throwable t) {
+								logger.error("Failed to remove client[{}] message, reason[{}]",
+										endpoint.clientIdentifier(), t.getMessage());
 							}
 				});
 			}

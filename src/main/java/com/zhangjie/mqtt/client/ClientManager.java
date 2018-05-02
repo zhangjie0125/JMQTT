@@ -4,12 +4,17 @@ import java.util.HashMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import io.vertx.mqtt.MqttEndpoint;
 
 public class ClientManager {
     private volatile static ClientManager instance;
     private Lock lock;
     private HashMap<String/*ClientId*/, Client> map;
+    
+    private static final Logger logger = LoggerFactory.getLogger(ClientManager.class);
 
     public static ClientManager getInstance(){
         if(instance == null){
@@ -34,12 +39,11 @@ public class ClientManager {
     	
     	if (map.containsKey(clientId)) {
     		oldClient = map.get(clientId);
-    		System.out.println("Close old client connection:" + oldClient.endpoint().clientIdentifier()
-    				+ ", old endpoint:" + oldClient.endpoint().toString() + ", new endpoint:" + endpoint.toString());
+    		logger.info("Close old client[{}] connection", oldClient.endpoint().clientIdentifier());
     		map.replace(clientId, new Client(endpoint));
     	} else {
     		map.put(clientId, new Client(endpoint));
-    		System.out.println("Add new client connection for clientId[" + clientId + "]");
+    		logger.info("Add new client connection for clientId[{}]", clientId);
     	}
     	lock.unlock();
     	
@@ -53,6 +57,7 @@ public class ClientManager {
     	
     	if (map.containsKey(clientId)) {
     		Client oldClient = map.remove(clientId);
+    		logger.info("Remove old client[{}] connection", oldClient.endpoint().clientIdentifier());
     		oldClient.close();
     	}
     	lock.unlock();
