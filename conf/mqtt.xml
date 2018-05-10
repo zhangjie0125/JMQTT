@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<root>
+    <cluster>
+        <zookeeper>
+            <url>10.10.10.10</url>
+            <root_path>io.vertx</root_path>
+        </zookeeper>
+        <host>10.10.10.10</host>
+    </cluster>
+    <persistence>
+        <mysql>
+            <host>10.10.10.10</host>
+            <port>3306</port>
+            <username>mqttuser</username>
+            <password>123456</password>
+            <database>mqtt</database>
+            <max_pool_size>100</max_pool_size>
+            <query_timeout>1000</query_timeout>
+        </mysql>
+    </persistence>
+</root>

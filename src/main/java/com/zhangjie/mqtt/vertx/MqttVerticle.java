@@ -1,4 +1,4 @@
-package com.zhangjie.mqtt;
+package com.zhangjie.mqtt.vertx;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -7,6 +7,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.zhangjie.mqtt.config.Config;
+
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -22,13 +24,13 @@ public class MysqlPersistence implements MqttPersistence {
 	@Override
 	public void start(Vertx vertx) {
 		JsonObject mySQLClientConfig = new JsonObject()
-				.put("host", "10.10.10.10")
-				.put("port", 3306)
-				.put("username", "mqttuser")
-				.put("password", "123456")
-				.put("database", "mqtt")
-				.put("maxPoolSize", 100)
-				.put("queryTimeout", 1000);
+				.put("host", Config.getInstance().getMysqlHost())
+				.put("port", Integer.parseInt(Config.getInstance().getMysqlPort()))
+				.put("username", Config.getInstance().getMysqlUsername())
+				.put("password", Config.getInstance().getMysqlPassword())
+				.put("database", Config.getInstance().getMysqlDbname())
+				.put("maxPoolSize", Integer.parseInt(Config.getInstance().getMysqlMaxPoolSize()))
+				.put("queryTimeout", Integer.parseInt(Config.getInstance().getMysqlQueryTimeout()));
 		client = MySQLClient.createShared(vertx, mySQLClientConfig);
 	}
 
