@@ -7,6 +7,8 @@ import org.slf4j.LoggerFactory;
 
 import com.zhangjie.mqtt.client.Client;
 import com.zhangjie.mqtt.client.ClientManager;
+import com.zhangjie.mqtt.cluster.Cluster;
+import com.zhangjie.mqtt.cluster.PublishMessage;
 import com.zhangjie.mqtt.persist.Persistence;
 import com.zhangjie.mqtt.persist.PersistenceCallback;
 import com.zhangjie.mqtt.subscribe.ClientIdQos;
@@ -47,12 +49,8 @@ public class Publish {
 		//check if need to save message into db.
 		boolean needSaveMessage = false;
 		if (publishQos > 0) {
-			for (ClientIdQos ciq : subscribedClients) {
-				if (ciq.getQos() > 0) {//TODO: still need to check 'clean session' flag
-					needSaveMessage = true;
-					break;
-				}
-			}
+			//save publish message if Qos > 0
+			needSaveMessage = true;
 		}
 		
 		if (needSaveMessage) {
@@ -60,6 +58,10 @@ public class Publish {
 					publish.messageId(), publish.payload().getBytes(), new PersistenceCallback() {
 				@Override
 				public void onSucceed(Integer insertId) {
+					//relay publish message to other nodes
+					Cluster.getInstance().relayPublishMessage(new PublishMessage(publish.topicName(), publish.qosLevel().value(),
+							insertId, publish.payload().getBytes()));
+					
 					for (ClientIdQos ciq : subscribedClients) {
 						int subscribedQos = ciq.getQos();
 						if (publishQos < subscribedQos) {
@@ -82,7 +84,7 @@ public class Publish {
 											client.endpoint().clientIdentifier(), topic, qos, new String(publish.payload().getBytes()));
 									client.endpoint().publish(topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
 									int packetId = client.endpoint().lastMessageId();
-									client.savePublishMessage(packetId, insertId.intValue(), topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
+									client.savePublishMessage(packetId, insertId.intValue(), topic, publish.payload().getBytes(), MqttQoS.valueOf(qos), false, false);
 									logger.info("Save publish message, packetId[{}], insertId[{}]", packetId, insertId);
 								}
 								
@@ -108,6 +110,10 @@ public class Publish {
 				}
 			});
 		} else {
+			//relay publish message to other nodes
+			Cluster.getInstance().relayPublishMessage(new PublishMessage(publish.topicName(), publish.qosLevel().value(),
+					-1, publish.payload().getBytes()));
+			
 			//No need to save message
 			for (ClientIdQos ciq : subscribedClients) {
 				int subscribedQos = ciq.getQos();

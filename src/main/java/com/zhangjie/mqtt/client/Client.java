@@ -5,75 +5,60 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 import io.netty.handler.codec.mqtt.MqttQoS;
-import io.vertx.core.buffer.Buffer;
 import io.vertx.mqtt.MqttEndpoint;
 
-class PublishMessage {
-	private int msgId;
+class CachePublishMessage {
 	private String topic;
-	private Buffer payload;
-	private MqttQoS qos;
+	private int qos;
+	private int packetId;
 	private boolean isDup;
 	private boolean isRetain;
+	private byte[] payload;
 	private int insertId;
 	
-	public PublishMessage(int msgId, int insertId, String topic, Buffer payload, MqttQoS qos, boolean isDup, boolean isRetain) {
-		this.msgId = msgId;
-		this.insertId = insertId;
+	public CachePublishMessage(String topic, int qos, int packetId, boolean isDup, boolean isRetain, byte[] payload, int insertId) {
 		this.topic = topic;
-		this.payload = payload;
 		this.qos = qos;
+		this.packetId = packetId;
 		this.isDup = isDup;
 		this.isRetain = isRetain;
-	}
-	
-	public int getMsgId() {
-		return msgId;
-	}
-	public void setMsgId(int msgId) {
-		this.msgId = msgId;
-	}
-	public int getInsertId() {
-		return insertId;
-	}
-	public void setInsertId(int insertId) {
+		this.payload = payload;
 		this.insertId = insertId;
 	}
+
 	public String getTopic() {
 		return topic;
 	}
-	public void setTopic(String topic) {
-		this.topic = topic;
-	}
-	public Buffer getPayload() {
-		return payload;
-	}
-	public void setPayload(Buffer payload) {
-		this.payload = payload;
-	}
-	public MqttQoS getQos() {
+
+	public int getQos() {
 		return qos;
 	}
-	public void setQos(MqttQoS qos) {
-		this.qos = qos;
+
+	public int getPacketId() {
+		return packetId;
 	}
+
 	public boolean isDup() {
 		return isDup;
 	}
-	public void setDup(boolean isDup) {
-		this.isDup = isDup;
-	}
+
 	public boolean isRetain() {
 		return isRetain;
 	}
-	public void setRetain(boolean isRetain) {
-		this.isRetain = isRetain;
+
+	public byte[] getPayload() {
+		return payload;
+	}
+
+	public int getInsertId() {
+		return insertId;
 	}
 }
 
+
 public class Client {
 	private MqttEndpoint endpoint;
-	private ArrayList<PublishMessage> sentPublishMsgs;
+	private ArrayList<CachePublishMessage> sentPublishMsgs;
 	private Lock lock;
 	
 	public Client(MqttEndpoint endpoint) {
@@ -82,16 +67,16 @@ public class Client {
 		lock = new ReentrantLock();
 	}
 	
-	public void savePublishMessage(int msgId, int insertId, String topic, Buffer payload, MqttQoS qosLevel, boolean isDup, boolean isRetain) {
+	public void savePublishMessage(int packetId, int insertId, String topic, byte[] payload, MqttQoS qosLevel, boolean isDup, boolean isRetain) {
 		lock.lock();
-		sentPublishMsgs.add(new PublishMessage(msgId, insertId, topic, payload, qosLevel, isDup, isRetain));
+		sentPublishMsgs.add(new CachePublishMessage(topic, qosLevel.value(), packetId, isDup, isRetain, payload, insertId));
 		lock.unlock();
 	}
 	
 	public int removePublishMessage(int msgId) {
 		lock.lock();
-		for (PublishMessage msg : sentPublishMsgs) {
-			if (msg.getMsgId() == msgId) {
+		for (CachePublishMessage msg : sentPublishMsgs) {
+			if (msg.getPacketId() == msgId) {
 				sentPublishMsgs.remove(msg);
 				lock.unlock();
 				return msg.getInsertId();
