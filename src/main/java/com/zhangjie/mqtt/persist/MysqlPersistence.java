@@ -43,7 +43,7 @@ public class MysqlPersistence implements MqttPersistence {
 	}
 	
 	@Override
-	public void saveClientConnection(String clientId, String nodeId, PersistenceCallback cb) {
+	public void saveClientConnection(String clientId, String nodeId, MqttPersistenceHandler<MqttPersistenceResult<Integer>> handler) {
 		client.getConnection(res -> {
 			if (res.succeeded()) {
 				SQLConnection conn = res.result();
@@ -53,11 +53,16 @@ public class MysqlPersistence implements MqttPersistence {
 							//ATTENTION: If a exception is throw in this function,
 							//this function would be called again with 'r.succeeded() = false' 
 							conn.close();
+							
+							MqttPersistenceResult<Integer> result = new MqttPersistenceResult<Integer>();
+							
 							if (r.succeeded()) {
-								cb.onSucceed(0);
+								result.setResult(r.result().getKeys().getInteger(0));
 							} else {
-								cb.onFail(r.cause());
+								result.setCause(r.cause());
 							}
+							
+							handler.handle(result);
 				});
 			} else {
 				logger.error("saveClientConnection getConnection failed[{}]", res.cause().getMessage());
@@ -67,7 +72,7 @@ public class MysqlPersistence implements MqttPersistence {
 	}
 	
 	@Override
-	public void getClientConnection(String clientId, MqttPersistenceHandler<ClientConnectionInfo> handler) {
+	public void getClientConnection(String clientId, MqttPersistenceHandler<MqttPersistenceResult<ClientConnectionInfo>> handler) {
 		client.getConnection(res -> {
 			if (res.succeeded()) {
 				SQLConnection conn = res.result();
@@ -75,13 +80,12 @@ public class MysqlPersistence implements MqttPersistence {
 				conn.queryWithParams("SELECT * FROM connection WHERE client_id = ? ORDER BY time DESC", params,
 						r -> {
 							conn.close();
-							if (r.failed()) {
-								logger.error("failed to get client[{}] connection info, reason:{}",
-										clientId, r.cause().getMessage());
-							} else {
+							
+							MqttPersistenceResult<ClientConnectionInfo> result = new MqttPersistenceResult<ClientConnectionInfo>();
+							if (r.succeeded()) {
 								if (r.result().getNumRows() == 0) {
 									//this is the first time that client connects to me
-									handler.handle(new ClientConnectionInfo("", 0));
+									result.setResult((new ClientConnectionInfo("", 0)));
 								} else {
 									String nodeId = r.result().getRows().get(0).getString("node_id");
 									long time = 0;
@@ -95,10 +99,15 @@ public class MysqlPersistence implements MqttPersistence {
 							        }
 									
 									logger.info("connect time:{}", time);
-									handler.handle(new ClientConnectionInfo(nodeId, time));
+									result.setResult((new ClientConnectionInfo(nodeId, time)));
 								}
+							} else {
+								logger.error("failed to get client[{}] connection info, reason:{}",
+										clientId, r.cause().getMessage());
+								result.setCause(r.cause());
 							}
 							
+							handler.handle(result);
 						});
 			} else {
 				logger.error("saveClientConnection getConnection failed[{}]", res.cause().getMessage());

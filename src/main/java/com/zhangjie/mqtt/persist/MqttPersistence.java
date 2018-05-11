@@ -9,8 +9,8 @@ public interface MqttPersistence {
 	void start(Vertx vertx);
 	void stop();
 	
-	void saveClientConnection(String clientId, String nodeId, PersistenceCallback cb);
-	void getClientConnection(String clientId, MqttPersistenceHandler<ClientConnectionInfo> handler);
+	void saveClientConnection(String clientId, String nodeId, MqttPersistenceHandler<MqttPersistenceResult<Integer>> handler);
+	void getClientConnection(String clientId, MqttPersistenceHandler<MqttPersistenceResult<ClientConnectionInfo>> handler);
 	
 	void saveClientSubscribe(String clientId, ArrayList<MqttTopicQos> subscribeInfo, PersistenceCallback cb);
 	void removeClientSubscribe(String clientId, List<String> topics, PersistenceCallback cb);
