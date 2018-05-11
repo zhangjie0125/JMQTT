@@ -1,6 +1,9 @@
 package com.zhangjie.mqtt.persist;
 
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -61,6 +64,46 @@ public class MysqlPersistence implements MqttPersistence {
 			}
 		});
 		
+	}
+	
+	@Override
+	public void getClientConnection(String clientId, MqttPersistenceHandler<ClientConnectionInfo> handler) {
+		client.getConnection(res -> {
+			if (res.succeeded()) {
+				SQLConnection conn = res.result();
+				JsonArray params = new JsonArray().add(clientId);
+				conn.queryWithParams("SELECT * FROM connection WHERE client_id = ? ORDER BY time DESC", params,
+						r -> {
+							conn.close();
+							if (r.failed()) {
+								logger.error("failed to get client[{}] connection info, reason:{}",
+										clientId, r.cause().getMessage());
+							} else {
+								if (r.result().getNumRows() == 0) {
+									//this is the first time that client connects to me
+									handler.handle(new ClientConnectionInfo("", 0));
+								} else {
+									String nodeId = r.result().getRows().get(0).getString("node_id");
+									long time = 0;
+									SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
+									String strTime = r.result().getRows().get(0).getString("time");
+									try {
+							            Date date=f.parse(strTime);
+							            time = date.getTime();
+							        } catch(ParseException px) {
+							            logger.error("failed to parse {} to Date object", strTime);
+							        }
+									
+									logger.info("connect time:{}", time);
+									handler.handle(new ClientConnectionInfo(nodeId, time));
+								}
+							}
+							
+						});
+			} else {
+				logger.error("saveClientConnection getConnection failed[{}]", res.cause().getMessage());
+			}
+		});
 	}
 
 	@Override

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="info" monitorInterval="30">
+    <Appenders>
+
+        <!-- normal file -->
+        <!--File name="File" fileName="e:/log.out" append="true" immediateFlush="false" bufferedIO="true" bufferSize="1024">
+            <PatternLayout>
+                <Pattern>%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %L- %msg%n</Pattern>
+            </PatternLayout>
+        </File>
+
+        <Async name="Async">
+            <AppenderRef ref="File"/>
+        </Async-->
+
+        <RollingFile name="RollingFile" fileName="jmqtt.log" filePattern="jmqtt-%d{yyyy-MM-dd}.log.gz">
+            <PatternLayout>
+                <Pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n</Pattern>
+            </PatternLayout>
+
+            <Policies>
+                <CronTriggeringPolicy schedule="0 0 * * * ?"/>
+            </Policies>
+        </RollingFile>
+
+    </Appenders>
+
+    <Loggers>
+
+        <Root level="info" >
+            <!--AppenderRef ref="Async"/-->
+            <AppenderRef ref="RollingFile"/>
+        </Root>
+
+        <!--AsyncRoot level="info">
+            <AppenderRef ref="File"/>
+        </AsyncRoot-->
+    </Loggers>
+
+</Configuration>

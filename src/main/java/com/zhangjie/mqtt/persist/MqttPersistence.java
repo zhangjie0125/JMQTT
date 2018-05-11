@@ -10,6 +10,7 @@ public interface MqttPersistence {
 	void stop();
 	
 	void saveClientConnection(String clientId, String nodeId, PersistenceCallback cb);
+	void getClientConnection(String clientId, MqttPersistenceHandler<ClientConnectionInfo> handler);
 	
 	void saveClientSubscribe(String clientId, ArrayList<MqttTopicQos> subscribeInfo, PersistenceCallback cb);
 	void removeClientSubscribe(String clientId, List<String> topics, PersistenceCallback cb);

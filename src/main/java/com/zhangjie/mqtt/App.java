@@ -41,7 +41,9 @@ public class App {
 			if (res.succeeded()) {
 				Vertx vertx = res.result();
 				
+				Cluster.getInstance().setNodeId(mgr.getNodeID());
 				Cluster.getInstance().setVertx(vertx);
+				logger.info("Node ID:{}", Cluster.getInstance().getNodeId());
 				
 				DeploymentOptions deployOptions = new DeploymentOptions().setInstances(10);
 				vertx.deployVerticle("com.zhangjie.mqtt.vertx.MqttVerticle", deployOptions);
