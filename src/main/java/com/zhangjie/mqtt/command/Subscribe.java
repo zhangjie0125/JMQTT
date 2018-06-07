@@ -8,7 +8,6 @@ import org.slf4j.LoggerFactory;
 
 import com.zhangjie.mqtt.persist.MqttTopicQos;
 import com.zhangjie.mqtt.persist.Persistence;
-import com.zhangjie.mqtt.persist.PersistenceCallback;
 import com.zhangjie.mqtt.subscribe.SubscribeInfo;
 
 import io.netty.handler.codec.mqtt.MqttQoS;
@@ -41,19 +40,15 @@ public class Subscribe {
 		logger.info("Client[{}] subscribe info[{}]", endpoint.clientIdentifier(), sb.toString());
 		
 		Persistence.getInstance().saveClientSubscribe(endpoint.clientIdentifier(), subscribeInfo,
-				new PersistenceCallback() {
-					@Override
-					public void onSucceed(Integer insertId) {
+				result -> {
+					if (result.isSucceeded()) {
 						// ack the subscriptions request
 						endpoint.subscribeAcknowledge(subscribe.messageId(), grantedQosLevels);
 						SubscribeInfo.getInstance().addNewSubscribeInfos(endpoint.clientIdentifier(),
 								subscribeInfo);
-					}
-
-					@Override
-					public void onFail(Throwable t) {
+					} else {
 						logger.error("Failed to save client[{}] subscribe info, close client connection. reason[{}]",
-								endpoint.clientIdentifier(), t.getMessage());
+								endpoint.clientIdentifier(), result.getCause().getMessage());
 						endpoint.close();
 					}
 				});

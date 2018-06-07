@@ -116,7 +116,7 @@ public class MysqlPersistence implements MqttPersistence {
 	}
 
 	@Override
-	public void saveClientSubscribe(String clientId, ArrayList<MqttTopicQos> subscribeInfo, PersistenceCallback cb) {
+	public void saveClientSubscribe(String clientId, ArrayList<MqttTopicQos> subscribeInfo, MqttPersistenceHandler<MqttPersistenceResult<Integer>> handler) {
 		client.getConnection(res -> {
 			if (res.succeeded()) {
 				StringBuilder sb = new StringBuilder("INSERT INTO subscribe (client_id, topic, qos, time) VALUES");
@@ -142,11 +142,14 @@ public class MysqlPersistence implements MqttPersistence {
 				conn.update(sb.toString(),
 						r -> {
 							conn.close();
+							
+							MqttPersistenceResult<Integer> result = new MqttPersistenceResult<Integer>();
 							if (r.succeeded()) {
-								cb.onSucceed(0);
+								result.setResult(r.result().getKeys().getInteger(0));
 							} else {
-								cb.onFail(r.cause());
+								result.setCause(r.cause());
 							}
+							handler.handle(result);
 				});
 			} else {
 				logger.error("saveClientSubscribe getConnection failed[{}]", res.cause().getMessage());
@@ -155,8 +158,10 @@ public class MysqlPersistence implements MqttPersistence {
 	}
 
 	@Override
-	public void removeClientSubscribe(String clientId, List<String> topics, PersistenceCallback cb) {
-		OperationCounterCallback occb = new OperationCounterCallback(topics.size());
+	public void removeClientSubscribe(String clientId, List<String> topics, MqttPersistenceHandler<MqttPersistenceResult<Integer>> handler) {
+		MqttPersistenceResult<Integer> result = new MqttPersistenceResult<Integer>();
+		AtomicInteger counter = new AtomicInteger(0);
+		int total = topics.size();
 		
 		for (String topic : topics) {
 			client.getConnection(res -> {
@@ -166,15 +171,17 @@ public class MysqlPersistence implements MqttPersistence {
 					conn.updateWithParams("DELETE FROM subscribe WHERE client_id = ? AND topic = ?",
 							params, r -> {
 								conn.close();
+								
 								if (!r.succeeded()) {
-									occb.setFailure();
+									//Error
+									result.setCause(r.cause());
 								}
-								if (occb.tick()) {
-									if (occb.getFailureCount() == 0) {
-										cb.onSucceed(0);
-									} else {
-										cb.onFail(r.cause());
-									}
+								
+								int value = counter.incrementAndGet();
+								if (value >= total) {
+									//all topics are removed
+									result.setResult(value);
+									handler.handle(result);
 								}
 					});
 				} else {
@@ -185,7 +192,7 @@ public class MysqlPersistence implements MqttPersistence {
 	}
 	
 	@Override
-	public void saveMessage(String clientId, String topic, int packetId, byte[] msg, PersistenceCallback cb) {
+	public void saveMessage(String clientId, String topic, int packetId, byte[] msg, MqttPersistenceHandler<MqttPersistenceResult<Integer>> handler) {
 		client.getConnection(res -> {
 			if (res.succeeded()) {
 				SQLConnection conn = res.result();
@@ -193,11 +200,14 @@ public class MysqlPersistence implements MqttPersistence {
 				conn.updateWithParams("INSERT INTO message (topic, message, packet_id, client_id, time) VALUES( ?, ?, ?, ?, NOW(6) )",
 						params, r -> {
 							conn.close();
+							
+							MqttPersistenceResult<Integer> result = new MqttPersistenceResult<Integer>();
 							if (r.succeeded()) {
-								cb.onSucceed(r.result().getKeys().getInteger(0));
+								result.setResult(r.result().getKeys().getInteger(0));
 							} else {
-								cb.onFail(r.cause());
+								result.setCause(r.cause());
 							}
+							handler.handle(result);
 				});
 			} else {
 				logger.error("saveMessage getConnection failed[{}]", res.cause().getMessage());
@@ -206,7 +216,7 @@ public class MysqlPersistence implements MqttPersistence {
 	}
 	
 	@Override
-	public void saveClientMessage(String clientId, int msgId, int qos, PersistenceCallback cb) {
+	public void saveClientMessage(String clientId, int msgId, int qos, MqttPersistenceHandler<MqttPersistenceResult<Integer>> handler) {
 		client.getConnection(res -> {
 			if (res.succeeded()) {
 				SQLConnection conn = res.result();
@@ -214,11 +224,14 @@ public class MysqlPersistence implements MqttPersistence {
 				conn.updateWithParams("INSERT INTO msg_list (client_id, message_id, qos, time) VALUES( ?, ?, ?, NOW(6) )",
 						params, r -> {
 							conn.close();
+							
+							MqttPersistenceResult<Integer> result = new MqttPersistenceResult<Integer>();
 							if (r.succeeded()) {
-								cb.onSucceed(0);
+								result.setResult(r.result().getKeys().getInteger(0));
 							} else {
-								cb.onFail(r.cause());
+								result.setCause(r.cause());
 							}
+							handler.handle(result);
 				});
 			} else {
 				logger.error("saveClientMessage getConnection failed[{}]", res.cause().getMessage());
@@ -227,7 +240,7 @@ public class MysqlPersistence implements MqttPersistence {
 	}
 	
 	@Override
-	public void removeClientMessage(String clientId, int msgId, PersistenceCallback cb) {
+	public void removeClientMessage(String clientId, int msgId, MqttPersistenceHandler<MqttPersistenceResult<Integer>> handler) {
 		client.getConnection(res -> {
 			if (res.succeeded()) {
 				SQLConnection conn = res.result();
@@ -235,43 +248,18 @@ public class MysqlPersistence implements MqttPersistence {
 				conn.updateWithParams("DELETE FROM msg_list WHERE client_id = ? AND message_id = ?",
 						params, r -> {
 							conn.close();
+							
+							MqttPersistenceResult<Integer> result = new MqttPersistenceResult<Integer>();
 							if (r.succeeded()) {
-								cb.onSucceed(0);
+								result.setResult(0);
 							} else {
-								cb.onFail(r.cause());
+								result.setCause(r.cause());
 							}
+							handler.handle(result);
 				});
 			} else {
 				logger.error("removeClientMessage getConnection failed[{}]", res.cause().getMessage());
 			}
 		});
-	}
-}
-
-class OperationCounterCallback {
-	private AtomicInteger counter;
-	private int total;
-	private int fail;
-	
-	public OperationCounterCallback(int total) {
-		this.total = total;
-		fail = 0;
-	}
-	
-	public boolean tick() {
-		int value = counter.incrementAndGet();
-		if (value >= total) {
-			return true;
-		} else {
-			return false;
-		}
-	}
-	
-	public void setFailure() {
-		fail++;
-	}
-	
-	public int getFailureCount() {
-		return fail;
 	}
 }

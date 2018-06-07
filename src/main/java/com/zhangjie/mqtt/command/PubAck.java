@@ -6,7 +6,6 @@ import org.slf4j.LoggerFactory;
 import com.zhangjie.mqtt.client.Client;
 import com.zhangjie.mqtt.client.ClientManager;
 import com.zhangjie.mqtt.persist.Persistence;
-import com.zhangjie.mqtt.persist.PersistenceCallback;
 
 import io.vertx.mqtt.MqttEndpoint;
 
@@ -28,18 +27,14 @@ public class PubAck {
 			logger.info("PubAck client[{}], packetId[{}], insertId[{}]",
 					endpoint.clientIdentifier(), id, insertId);
 			Persistence.getInstance().removeClientMessage(endpoint.clientIdentifier(), insertId,
-					new PersistenceCallback() {
-
-						@Override
-						public void onSucceed(Integer insertId) {
-						}
-
-						@Override
-						public void onFail(Throwable t) {
+					result -> {
+						if (result.isSucceeded()) {
+							//nothing need to do here
+						} else {
 							logger.error("Failed to remove client[{}] message, reason[{}]",
-									endpoint.clientIdentifier(), t.getMessage());
+									endpoint.clientIdentifier(), result.getCause().getMessage());
 						}
-			});
+					});
 		}
 	}
 }

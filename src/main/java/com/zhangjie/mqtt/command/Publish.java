@@ -10,7 +10,6 @@ import com.zhangjie.mqtt.client.ClientManager;
 import com.zhangjie.mqtt.cluster.Cluster;
 import com.zhangjie.mqtt.cluster.PublishMessage;
 import com.zhangjie.mqtt.persist.Persistence;
-import com.zhangjie.mqtt.persist.PersistenceCallback;
 import com.zhangjie.mqtt.subscribe.ClientIdQos;
 import com.zhangjie.mqtt.subscribe.SubscribeInfo;
 
@@ -55,60 +54,52 @@ public class Publish {
 		
 		if (needSaveMessage) {
 			Persistence.getInstance().saveMessage(endpoint.clientIdentifier(), topic,
-					publish.messageId(), publish.payload().getBytes(), new PersistenceCallback() {
-				@Override
-				public void onSucceed(Integer insertId) {
-					//relay publish message to other nodes
-					Cluster.getInstance().relayPublishMessage(new PublishMessage(publish.topicName(), publish.qosLevel().value(),
-							insertId, publish.payload().getBytes()));
-					
-					for (ClientIdQos ciq : subscribedClients) {
-						int subscribedQos = ciq.getQos();
-						if (publishQos < subscribedQos) {
-							subscribedQos = publishQos;
-						}
-						final int qos = subscribedQos;
-						
-						Client client = ClientManager.getInstance().getClient(ciq.getClientId());
-						if (client == null) {
-							continue;
-						}
-						
-						if (qos > 0) {//TODO: need to check 'clean session' flag
-							//save client output message list
-							Persistence.getInstance().saveClientMessage(client.endpoint().clientIdentifier(),
-									insertId.intValue(), qos, new PersistenceCallback() {
-								@Override
-								public void onSucceed(Integer id) {
-									logger.info("Save and send Publish msg to client[{}], topic[{}], qos[{}], message[{}]",
-											client.endpoint().clientIdentifier(), topic, qos, new String(publish.payload().getBytes()));
-									client.endpoint().publish(topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
-									int packetId = client.endpoint().lastMessageId();
-									client.savePublishMessage(packetId, insertId.intValue(), topic, publish.payload().getBytes(), MqttQoS.valueOf(qos), false, false);
-									logger.info("Save publish message, packetId[{}], insertId[{}]", packetId, insertId);
+					publish.messageId(), publish.payload().getBytes(), result -> {
+						if (result.isSucceeded()) {
+							//relay publish message to other nodes
+							Cluster.getInstance().relayPublishMessage(new PublishMessage(publish.topicName(), publish.qosLevel().value(),
+									result.getResult(), publish.payload().getBytes()));
+							
+							for (ClientIdQos ciq : subscribedClients) {
+								int subscribedQos = ciq.getQos();
+								if (publishQos < subscribedQos) {
+									subscribedQos = publishQos;
+								}
+								final int qos = subscribedQos;
+								
+								Client client = ClientManager.getInstance().getClient(ciq.getClientId());
+								if (client == null) {
+									continue;
 								}
 								
-								@Override
-								public void onFail(Throwable t) {
-									logger.error("Failed to save client[{}] message, reason[{}]",
-											client.endpoint().clientIdentifier(), t.getMessage());
+								if (qos > 0) {//TODO: need to check 'clean session' flag
+									//save client output message list
+									Persistence.getInstance().saveClientMessage(client.endpoint().clientIdentifier(),
+											result.getResult().intValue(), qos, saveResult -> {
+												if (saveResult.isSucceeded()) {
+													logger.info("Save and send Publish msg to client[{}], topic[{}], qos[{}], message[{}]",
+															client.endpoint().clientIdentifier(), topic, qos, new String(publish.payload().getBytes()));
+													client.endpoint().publish(topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
+													int packetId = client.endpoint().lastMessageId();
+													client.savePublishMessage(packetId, result.getResult().intValue(), topic, publish.payload().getBytes(), MqttQoS.valueOf(qos), false, false);
+													logger.info("Save publish message, packetId[{}], insertId[{}]", packetId, result.getResult());
+												} else {
+													logger.error("Failed to save client[{}] message, reason[{}]",
+															client.endpoint().clientIdentifier(), saveResult.getCause().getMessage());
+												}
+											});
+								} else {
+									//send message to client
+									logger.info("Send Publish msg to client[{}], topic[{}], qos[{}], message[{}]",
+											client.endpoint().clientIdentifier(), topic, qos, new String(publish.payload().getBytes()));
+									client.endpoint().publish(topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
 								}
-							});
+							}
 						} else {
-							//send message to client
-							logger.info("Send Publish msg to client[{}], topic[{}], qos[{}], message[{}]",
-									client.endpoint().clientIdentifier(), topic, qos, new String(publish.payload().getBytes()));
-							client.endpoint().publish(topic, publish.payload(), MqttQoS.valueOf(qos), false, false);
+							logger.error("Failed to save client[{}] message, reason[{}]",
+									endpoint.clientIdentifier(), result.getCause().getMessage());
 						}
-					}
-				}
-
-				@Override
-				public void onFail(Throwable t) {
-					logger.error("Failed to save client[{}] message, reason[{}]",
-							endpoint.clientIdentifier(), t.getMessage());
-				}
-			});
+					});
 		} else {
 			//relay publish message to other nodes
 			Cluster.getInstance().relayPublishMessage(new PublishMessage(publish.topicName(), publish.qosLevel().value(),

@@ -4,7 +4,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.zhangjie.mqtt.persist.Persistence;
-import com.zhangjie.mqtt.persist.PersistenceCallback;
 
 import io.vertx.mqtt.MqttEndpoint;
 import io.vertx.mqtt.messages.MqttUnsubscribeMessage;
@@ -28,17 +27,13 @@ public class Unsubscribe {
 		logger.info("client[{}] unsubscribe info[{}]", endpoint.clientIdentifier(), sb.toString());
 		
 		Persistence.getInstance().removeClientSubscribe(endpoint.clientIdentifier(), unsubscribe.topics(),
-				new PersistenceCallback() {
-					@Override
-					public void onSucceed(Integer insertId) {
+				result -> {
+					if (result.isSucceeded()) {
 						// ack the subscriptions request
 						endpoint.unsubscribeAcknowledge(unsubscribe.messageId());
-					}
-
-					@Override
-					public void onFail(Throwable t) {
+					} else {
 						logger.error("Failed to remove client[{}] subscribe info, close client connection. reason[{}]",
-								endpoint.clientIdentifier(), t.getMessage());
+								endpoint.clientIdentifier(), result.getCause().getMessage());
 						endpoint.close();
 					}
 				});

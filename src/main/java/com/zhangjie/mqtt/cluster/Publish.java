@@ -8,7 +8,6 @@ import org.slf4j.LoggerFactory;
 import com.zhangjie.mqtt.client.Client;
 import com.zhangjie.mqtt.client.ClientManager;
 import com.zhangjie.mqtt.persist.Persistence;
-import com.zhangjie.mqtt.persist.PersistenceCallback;
 import com.zhangjie.mqtt.subscribe.ClientIdQos;
 import com.zhangjie.mqtt.subscribe.SubscribeInfo;
 
@@ -50,23 +49,19 @@ public class Publish {
 			if (qos > 0) {//TODO: need to check 'clean session' flag
 				//save client output message list
 				Persistence.getInstance().saveClientMessage(client.endpoint().clientIdentifier(),
-						message.getInsertId(), qos, new PersistenceCallback() {
-					@Override
-					public void onSucceed(Integer id) {
-						logger.info("Save and send Publish msg to client[{}], topic[{}], qos[{}], message[{}]",
-								client.endpoint().clientIdentifier(), message.getTopic(), qos, new String(message.getPayload()));
-						client.endpoint().publish(message.getTopic(), Buffer.buffer(message.getPayload()), MqttQoS.valueOf(qos), false, false);
-						int packetId = client.endpoint().lastMessageId();
-						client.savePublishMessage(packetId, message.getInsertId(), message.getTopic(), message.getPayload(), MqttQoS.valueOf(qos), false, false);
-						logger.info("Save publish message, packetId[{}], insertId[{}]", packetId, message.getInsertId());
-					}
-					
-					@Override
-					public void onFail(Throwable t) {
-						logger.error("Failed to save client[{}] message, reason[{}]",
-								client.endpoint().clientIdentifier(), t.getMessage());
-					}
-				});
+						message.getInsertId(), qos, result -> {
+							if (result.isSucceeded()) {
+								logger.info("Save and send Publish msg to client[{}], topic[{}], qos[{}], message[{}]",
+										client.endpoint().clientIdentifier(), message.getTopic(), qos, new String(message.getPayload()));
+								client.endpoint().publish(message.getTopic(), Buffer.buffer(message.getPayload()), MqttQoS.valueOf(qos), false, false);
+								int packetId = client.endpoint().lastMessageId();
+								client.savePublishMessage(packetId, message.getInsertId(), message.getTopic(), message.getPayload(), MqttQoS.valueOf(qos), false, false);
+								logger.info("Save publish message, packetId[{}], insertId[{}]", packetId, message.getInsertId());
+							} else {
+								logger.error("Failed to save client[{}] message, reason[{}]",
+										client.endpoint().clientIdentifier(), result.getCause().getMessage());
+							}
+						});
 			} else {
 				//send message to client
 				logger.info("Send Publish msg to client[{}], topic[{}], qos[{}], message[{}]",
